@@ -1,0 +1,12 @@
+[Unit]
+Description=batheart daemon
+After=network.target
+
+[Service]
+User=%U
+ExecStart=/home/offeex/go/bin/batheart
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
