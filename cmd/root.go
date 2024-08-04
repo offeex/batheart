@@ -80,10 +80,6 @@ func setConservationMode(b bool) {
 	}
 }
 
-func inThresholdRange(capacity uint, cfg *config) bool {
-	return capacity > cfg.Threshold-1 && capacity < cfg.Threshold+1
-}
-
 func runDaemon(provider *file.File, cfg *config) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
@@ -109,7 +105,7 @@ func runDaemon(provider *file.File, cfg *config) {
 	defer ticker.Stop()
 	defer log.Println("Batheart has been shut down")
 
-	prevCapacity := uint(0)
+	prevLevel := uint(0)
 
 	log.Println("Batheart have been enabled")
 	for {
@@ -117,33 +113,30 @@ func runDaemon(provider *file.File, cfg *config) {
 		case <-sigChan:
 			return
 		case <-ticker.C:
-			c, err := battery.Level()
+			l, err := battery.Level()
 			if err != nil {
-				log.Printf("Error reading battery capacity: %v", err)
+				log.Printf("Error reading battery level: %v", err)
 				continue
 			}
-			capacity := uint(c)
+			level := uint(l)
+			if level == prevLevel {
+				continue
+			}
 
-			if capacity == prevCapacity {
-				continue
-			}
-			prevCapacity = capacity
+			inThreshold := level >= cfg.Threshold
+			isCharging := level > prevLevel
 
-			charging, err := battery.IsCharging()
-			if err != nil {
-				log.Printf("Error checking battery charging status: %v", err)
-			}
-			if inThresholdRange(capacity, cfg) && charging {
-				ticker.Reset(1 * time.Second)
-			} else if !charging {
-				setConservationMode(false)
-				ticker.Reset(time.Minute * 5)
-				continue
+			setConservationMode(inThreshold)
+
+			if level >= cfg.Threshold-1 && isCharging {
+				ticker.Reset(time.Second * 10)
+			} else if !inThreshold && level < cfg.Threshold-5 { // Add hysteresis
+				ticker.Reset(time.Minute * 10)
 			} else {
 				ticker.Reset(time.Minute * 5)
 			}
 
-			setConservationMode(true)
+			prevLevel = level
 		}
 	}
 }
